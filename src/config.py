@@ -21,7 +21,7 @@ CHUNK_OVERLAP = 200
 # --- Reranker ---
 RERANK_MODEL_NAME = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 RERANK_TOP_K = 5
-RERANK_THRESHOLD = 0.1
+RERANK_THRESHOLD = -10.0  # Raw logit threshold (sentence-transformers v4)
 
 # --- Token budgets ---
 HISTORY_TOKEN_BUDGET = 4000

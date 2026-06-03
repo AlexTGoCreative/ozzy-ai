@@ -58,6 +58,10 @@ def initialize_vectorstore() -> Chroma:
             vectordb = Chroma.from_documents(
                 chunks, embedding=embedding_model, persist_directory=DB_DIR
             )
+            # Save meta for future rebuild checks
+            meta_path = os.path.join(DB_DIR, "meta.json")
+            with open(meta_path, "w") as f:
+                json.dump({"model_name": EMBEDDING_MODEL_NAME}, f)
             logger.info("VectorStore created and persisted")
 
         monitor.record("vectorstore_init", time.time() - start)

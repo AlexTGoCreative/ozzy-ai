@@ -28,5 +28,4 @@ RUN chmod -R 777 /app
 # Expose FastAPI port
 EXPOSE 7860
 
-# Start FastAPI app
-CMD ["uvicorn", "chat_api:app", "--host", "0.0.0.0", "--port", "7860"]
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "7860"]

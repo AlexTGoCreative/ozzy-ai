@@ -18,16 +18,16 @@ from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from starlette.responses import Response
 
 from src.schemas import ChatPayload
-from src.config import OPENAI_MODEL, RERANK_MODEL_NAME, RERANK_THRESHOLD, RERANK_TOP_K
+from src.config import OPENAI_MODEL
 from src import cache
 from src.context import build_scan_context, build_system_prompt
 from src.generation import truncate_history, generate, generate_stream
 from src.metrics import (
     monitor, REQUEST_COUNT, REQUEST_LATENCY,
-    RETRIEVAL_LATENCY, RERANK_LATENCY, GENERATION_LATENCY,
+    RETRIEVAL_LATENCY, GENERATION_LATENCY,
 )
 from src.retrieval import retrieve
-from src.reranking import rerank
+# from src.reranking import rerank  # disabled until better docs available
 
 logging.basicConfig(
     level=logging.INFO,
@@ -88,18 +88,18 @@ async def ask(payload: ChatPayload):
         monitor.record("retrieval", retrieval_duration)
         RETRIEVAL_LATENCY.observe(retrieval_duration)
 
-        # --- Reranking ---
-        rerank_start = time.time()
-        reranked_docs, _ = rerank(last_question, relevant_docs)
-        rerank_duration = time.time() - rerank_start
-        monitor.record("reranking", rerank_duration)
-        RERANK_LATENCY.observe(rerank_duration)
+        # --- Reranking (disabled until better docs available) ---
+        # rerank_start = time.time()
+        # reranked_docs, _ = rerank(last_question, relevant_docs)
+        # rerank_duration = time.time() - rerank_start
+        # monitor.record("reranking", rerank_duration)
+        # RERANK_LATENCY.observe(rerank_duration)
 
-        has_relevant_context = len(reranked_docs) > 0
+        has_relevant_context = len(relevant_docs) > 0
 
         # --- Context assembly ---
         scan_context = build_scan_context(payload)
-        doc_context = "\n\n".join(doc.page_content for doc in reranked_docs)
+        doc_context = "\n\n".join(doc.page_content for doc in relevant_docs)
 
         # --- Cache lookup ---
         ctx_hash = _context_hash(doc_context, scan_context)
@@ -141,7 +141,6 @@ async def ask(payload: ChatPayload):
         logger.info(
             f"Request completed in {duration:.2f}s "
             f"(retrieval={retrieval_duration:.2f}s, "
-            f"rerank={rerank_duration:.2f}s, "
             f"generation={gen_duration:.2f}s)"
         )
         return {"answer": answer_text}

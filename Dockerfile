@@ -1,4 +1,4 @@
-FROM python:3.9-slim
+FROM python:3.11-slim
 
 # Set working directory
 WORKDIR /app
@@ -9,8 +9,10 @@ ENV TRANSFORMERS_CACHE=/app/.hf/cache
 ENV HF_DATASETS_CACHE=/app/.hf/datasets
 ENV HF_METRICS_CACHE=/app/.hf/metrics
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y build-essential && apt-get clean
+# Install system dependencies (includes libxml2 for trafilatura/lxml)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends build-essential libxml2-dev libxslt1-dev && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Create the cache directories and set permissions
 RUN mkdir -p /app/.hf/cache /app/.hf/datasets /app/.hf/metrics && chmod -R 777 /app/.hf

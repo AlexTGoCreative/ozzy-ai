@@ -9,25 +9,26 @@ import hashlib
 import json
 import logging
 import time
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from langdetect import detect
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from starlette.responses import Response
 
 from src.schemas import ChatPayload
-from src.config import OPENAI_MODEL
+from src.config import OPENAI_MODEL, RERANK_MODEL_NAME, RERANK_THRESHOLD, RERANK_TOP_K
 from src import cache
 from src.context import build_scan_context, build_system_prompt
 from src.generation import truncate_history, generate, generate_stream
 from src.metrics import (
     monitor, REQUEST_COUNT, REQUEST_LATENCY,
-    RETRIEVAL_LATENCY, GENERATION_LATENCY,
+    RETRIEVAL_LATENCY, RERANK_LATENCY, GENERATION_LATENCY,
 )
-from src.retrieval import retrieve
-# from src.reranking import rerank  # disabled until better docs available
+from src.retrieval import retrieve, _get_embed_model, _get_qdrant
+from src.reranking import rerank, _get_model as _get_reranker
+from src.query_rewrite import rewrite_query
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,11 +40,24 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+# --- Lifespan: preload models at startup ---
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("Preloading models...")
+    _get_embed_model()
+    _get_qdrant()
+    _get_reranker()
+    logger.info("All models loaded — ready to serve requests")
+    yield
+
+
 # --- App ---
 app = FastAPI(
     title="ozzy-ai",
     description="OPSWAT cybersecurity RAG assistant",
-    version="2.2.0",
+    version="3.0.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -60,6 +74,49 @@ app.add_middleware(
 def _context_hash(doc_context: str, scan_context: str) -> str:
     combined = f"{doc_context}|{scan_context}"
     return hashlib.sha256(combined.encode()).hexdigest()[:16]
+
+
+def _extract_metadata_filters(question: str) -> dict | None:
+    """
+    Extract metadata filters from the question for targeted retrieval.
+    Returns filter dict or None.
+    """
+    filters = {}
+    question_lower = question.lower()
+
+    # Product detection
+    product_keywords = {
+        "metadefender cloud": "metadefender_cloud",
+        "md cloud": "metadefender_cloud",
+        "mdcloud": "metadefender_cloud",
+        "metadefender kiosk": "metadefender_kiosk",
+        "icap": "metadefender_icap",
+    }
+    for keyword, product in product_keywords.items():
+        if keyword in question_lower:
+            filters["product"] = product
+            break
+
+    return filters if filters else None
+
+
+def _build_doc_context(reranked: list[dict]) -> str:
+    """Build document context from reranked candidates using parent text."""
+    if not reranked:
+        return ""
+    parts = []
+    for i, candidate in enumerate(reranked):
+        # Use parent_text for richer context
+        text = candidate.get("parent_text", candidate["text"])
+        source = candidate.get("metadata", {}).get("source_url", "")
+        section = candidate.get("metadata", {}).get("section_path", "")
+        header = f"[{i+1}]"
+        if section:
+            header += f" ({section})"
+        if source:
+            header += f" — {source}"
+        parts.append(f"{header}\n{text}")
+    return "\n\n---\n\n".join(parts)
 
 
 # ─── Endpoints ──────────────────────────────────────────────────────────────
@@ -81,25 +138,36 @@ async def ask(payload: ChatPayload):
         if not last_question:
             raise HTTPException(status_code=400, detail="No question found in chat history")
 
-        # --- Retrieval ---
+        # --- Query Rewriting ---
+        history_for_rewrite = [
+            {"role": msg.role, "content": msg.text}
+            for msg in payload.chat_history[-6:]
+        ] if len(payload.chat_history) > 1 else None
+
+        search_query = rewrite_query(last_question, history_for_rewrite)
+
+        # --- Metadata Filters ---
+        filters = _extract_metadata_filters(search_query)
+
+        # --- Hybrid Retrieval ---
         retrieval_start = time.time()
-        relevant_docs = retrieve(last_question)
+        candidates = retrieve(search_query, filters=filters)
         retrieval_duration = time.time() - retrieval_start
         monitor.record("retrieval", retrieval_duration)
         RETRIEVAL_LATENCY.observe(retrieval_duration)
 
-        # --- Reranking (disabled until better docs available) ---
-        # rerank_start = time.time()
-        # reranked_docs, _ = rerank(last_question, relevant_docs)
-        # rerank_duration = time.time() - rerank_start
-        # monitor.record("reranking", rerank_duration)
-        # RERANK_LATENCY.observe(rerank_duration)
+        # --- Cross-Encoder Reranking ---
+        rerank_start = time.time()
+        reranked = rerank(search_query, candidates)
+        rerank_duration = time.time() - rerank_start
+        monitor.record("reranking", rerank_duration)
+        RERANK_LATENCY.observe(rerank_duration)
 
-        has_relevant_context = len(relevant_docs) > 0
+        has_relevant_context = len(reranked) > 0
 
-        # --- Context assembly ---
+        # --- Context assembly (using parent text) ---
         scan_context = build_scan_context(payload)
-        doc_context = "\n\n".join(doc.page_content for doc in relevant_docs)
+        doc_context = _build_doc_context(reranked)
 
         # --- Cache lookup ---
         ctx_hash = _context_hash(doc_context, scan_context)
@@ -141,7 +209,9 @@ async def ask(payload: ChatPayload):
         logger.info(
             f"Request completed in {duration:.2f}s "
             f"(retrieval={retrieval_duration:.2f}s, "
-            f"generation={gen_duration:.2f}s)"
+            f"rerank={rerank_duration:.2f}s, "
+            f"generation={gen_duration:.2f}s, "
+            f"candidates={len(candidates)}, reranked={len(reranked)})"
         )
         return {"answer": answer_text}
 
@@ -169,14 +239,23 @@ async def ask_stream(payload: ChatPayload):
         if not last_question:
             raise HTTPException(status_code=400, detail="No question found in chat history")
 
+        # Query rewriting
+        history_for_rewrite = [
+            {"role": msg.role, "content": msg.text}
+            for msg in payload.chat_history[-6:]
+        ] if len(payload.chat_history) > 1 else None
+
+        search_query = rewrite_query(last_question, history_for_rewrite)
+        filters = _extract_metadata_filters(search_query)
+
         # Retrieval + Reranking
-        relevant_docs = retrieve(last_question)
-        reranked_docs, _ = rerank(last_question, relevant_docs)
-        has_relevant_context = len(reranked_docs) > 0
+        candidates = retrieve(search_query, filters=filters)
+        reranked = rerank(search_query, candidates)
+        has_relevant_context = len(reranked) > 0
 
         # Context
         scan_context = build_scan_context(payload)
-        doc_context = "\n\n".join(doc.page_content for doc in reranked_docs)
+        doc_context = _build_doc_context(reranked)
 
         # Cache check
         ctx_hash = _context_hash(doc_context, scan_context)
@@ -235,7 +314,6 @@ async def get_metrics():
         "average_retrieval_time": monitor.average("retrieval"),
         "average_reranking_time": monitor.average("reranking"),
         "average_generation_time": monitor.average("generation"),
-        "average_vectorstore_init_time": monitor.average("vectorstore_init"),
         "total_requests": monitor.count("total_request"),
         "failed_requests": monitor.count("failed_request"),
         "llm_model": OPENAI_MODEL,

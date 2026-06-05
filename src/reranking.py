@@ -1,43 +1,76 @@
 """
-Cross-encoder reranking for retrieved documents.
+Cross-encoder reranking with bge-reranker-v2-m3.
+Scores retrieval candidates and applies threshold filtering.
 """
 
 import logging
-from typing import List, Tuple
+from typing import Optional
 
 from sentence_transformers import CrossEncoder
 
 from src.config import RERANK_MODEL_NAME, RERANK_TOP_K, RERANK_THRESHOLD
+from src.metrics import monitor
 
 logger = logging.getLogger(__name__)
 
-# Module-level singleton
-model = CrossEncoder(RERANK_MODEL_NAME)
-logger.info(f"Cross-encoder reranker loaded: {RERANK_MODEL_NAME}")
+# Module-level singleton (lazy-loaded)
+_model: Optional[CrossEncoder] = None
 
 
-def rerank(query: str, docs: list) -> Tuple[list, List[float]]:
+def _get_model() -> CrossEncoder:
+    global _model
+    if _model is None:
+        logger.info(f"Loading reranker: {RERANK_MODEL_NAME}")
+        _model = CrossEncoder(RERANK_MODEL_NAME, max_length=512)
+        logger.info("Reranker loaded")
+    return _model
+
+
+def rerank(query: str, candidates: list[dict]) -> list[dict]:
     """
-    Score and filter documents using the cross-encoder.
+    Score and filter candidates using the cross-encoder.
+
+    Args:
+        query: The user's search query
+        candidates: List of dicts from hybrid_search with 'text', 'parent_text', 'metadata', 'score'
 
     Returns:
-        (reranked_docs, scores) — filtered and sorted by relevance.
+        Filtered and re-scored candidates (top-k above threshold), with 'rerank_score' added.
     """
-    if not docs:
-        return [], []
+    if not candidates:
+        return []
 
-    pairs = [[query, doc.page_content] for doc in docs]
-    scores = model.predict(pairs)
+    import time
+    start = time.time()
 
-    scored_docs = sorted(zip(docs, scores), key=lambda x: x[1], reverse=True)
-    filtered = [(doc, float(s)) for doc, s in scored_docs if s >= RERANK_THRESHOLD]
-    filtered = filtered[:RERANK_TOP_K]
+    model = _get_model()
 
-    reranked_docs = [doc for doc, _ in filtered]
-    top_scores = [s for _, s in filtered]
+    # Score pairs: (query, candidate_text)
+    pairs = [[query, c["text"]] for c in candidates]
+    scores = model.predict(pairs, batch_size=32, show_progress_bar=False)
 
+    # Normalize scores to [0, 1] using sigmoid if raw logits
+    import numpy as np
+    normalized_scores = 1 / (1 + np.exp(-np.array(scores)))
+
+    # Attach scores and sort
+    for candidate, score in zip(candidates, normalized_scores):
+        candidate["rerank_score"] = float(score)
+
+    candidates.sort(key=lambda c: c["rerank_score"], reverse=True)
+
+    # Threshold filter
+    survivors = [c for c in candidates if c["rerank_score"] >= RERANK_THRESHOLD]
+
+    # Top-K cut
+    survivors = survivors[:RERANK_TOP_K]
+
+    duration = time.time() - start
+    monitor.record("reranking", duration)
     logger.info(
-        f"Reranking: {len(docs)} candidates -> {len(reranked_docs)} above threshold "
-        f"(threshold={RERANK_THRESHOLD}, top_score={top_scores[0] if top_scores else 'N/A'})"
+        f"Reranking: {len(candidates)} candidates → {len(survivors)} above threshold "
+        f"(threshold={RERANK_THRESHOLD}, "
+        f"top_score={survivors[0]['rerank_score']:.3f} if survivors else 'N/A', "
+        f"duration={duration:.3f}s)"
     )
-    return reranked_docs, top_scores
+    return survivors

@@ -32,7 +32,7 @@ def _get_embed_model() -> BGEM3FlagModel:
     global _embed_model
     if _embed_model is None:
         logger.info(f"Loading embedding model for retrieval: {EMBEDDING_MODEL_NAME}")
-        _embed_model = BGEM3FlagModel(EMBEDDING_MODEL_NAME, use_fp16=True)
+        _embed_model = BGEM3FlagModel(EMBEDDING_MODEL_NAME, use_fp16=False)
         logger.info("Embedding model loaded")
     return _embed_model
 

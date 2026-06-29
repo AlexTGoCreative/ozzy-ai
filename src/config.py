@@ -43,9 +43,16 @@ QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", None)
 QDRANT_COLLECTION = "opswat_docs_v1"
 
 # --- Hybrid Retrieval ---
-RETRIEVAL_TOP_N = 50           # Candidates from hybrid search before reranking
+# Candidates from hybrid search before reranking. The cross-encoder reranker
+# scores every candidate on CPU, so this count is the dominant pre-LLM latency
+# cost (≈ linear in top_n). 24 keeps recall effectively unchanged — the final 8
+# reranked docs almost always come from the hybrid top ~20 — while roughly
+# halving rerank time vs the old 50. Override via env without a code change.
+RETRIEVAL_TOP_N = int(os.getenv("RETRIEVAL_TOP_N", "24"))  # was 50
 RETRIEVAL_FINAL_K = 8          # Final docs after reranking
-RRF_K = 60                     # RRF fusion constant
+# NOTE: Hybrid fusion uses Qdrant's built-in Reciprocal Rank Fusion (RRF) with
+# the server's default rank constant — see retrieval.py's FusionQuery. There is
+# no client-side RRF k override, so no constant is defined here.
 
 # --- Ingestion ---
 SEED_URLS = [

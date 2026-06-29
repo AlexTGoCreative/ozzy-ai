@@ -7,7 +7,7 @@
 
 ## Overview
 
-Predictive Alin AI is OPSWAT’s proprietary malware detection engine for pre-execution file analysis. It runs in parallel with the Metascan multiscanning package to help identify malicious files before detonation or endpoint execution.
+Predictive Alin AI is OPSWAT’s first proprietary AI/ML detection engine for pre-execution file analysis. It runs in parallel with the Metascan multiscanning package to help identify malicious files before detonation or endpoint execution. Current release is v3.0, announced 2026-04-08.
 
 - Best for: high-volume enterprise file flows
 - Implemented: before execution (static analysis)

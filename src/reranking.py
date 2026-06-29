@@ -4,14 +4,29 @@ Scores retrieval candidates and applies threshold filtering.
 """
 
 import logging
+import os
 from typing import Optional
 
+import torch
 from sentence_transformers import CrossEncoder
 
 from src.config import RERANK_MODEL_NAME, RERANK_TOP_K, RERANK_THRESHOLD
 from src.metrics import monitor
 
 logger = logging.getLogger(__name__)
+
+# Cross-encoder reranking is the dominant pre-LLM CPU cost. PyTorch defaults to
+# the physical-core count and ignores OMP_NUM_THREADS, so set the intra-op thread
+# count explicitly. 8 is the measured sweet spot on the deployment host (~10%
+# faster than the 6-core default; more threads don't help — the op is
+# memory-bandwidth bound). Configure via the OZZY_AI_THREADS env var.
+_rerank_threads = os.getenv("OZZY_AI_THREADS")
+if _rerank_threads:
+    try:
+        torch.set_num_threads(int(_rerank_threads))
+        logger.info(f"Reranker torch intra-op threads set to {torch.get_num_threads()}")
+    except (ValueError, RuntimeError) as e:
+        logger.warning(f"Could not set torch threads from OZZY_AI_THREADS={_rerank_threads}: {e}")
 
 # Module-level singleton (lazy-loaded)
 _model: Optional[CrossEncoder] = None

@@ -17,7 +17,6 @@ from src.config import (
     EMBEDDING_MODEL_NAME,
     RETRIEVAL_TOP_N,
     RETRIEVAL_FINAL_K,
-    RRF_K,
 )
 from src.metrics import monitor, RETRIEVAL_LATENCY
 

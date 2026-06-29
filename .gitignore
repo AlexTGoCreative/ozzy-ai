@@ -5,3 +5,4 @@ __pycache__/
 chatbot.log
 chroma_db/
 .hf/
+data/

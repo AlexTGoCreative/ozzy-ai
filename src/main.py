@@ -55,7 +55,7 @@ async def lifespan(app: FastAPI):
 # --- App ---
 app = FastAPI(
     title="ozzy-ai",
-    description="OPSWAT cybersecurity RAG assistant",
+    description="Athena — advanced AI cybersecurity RAG assistant",
     version="3.0.0",
     lifespan=lifespan,
 )

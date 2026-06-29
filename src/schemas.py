@@ -19,3 +19,6 @@ class ChatPayload(BaseModel):
     sanitized_info: Optional[Dict] = None
     sandbox_data: Optional[Dict] = None
     url_data: Optional[Dict] = None
+    # Per-file AGATHA engine verdict (the AI file classifier). URL AGATHA
+    # verdicts arrive nested under url_data["agatha"] instead.
+    agatha: Optional[Dict] = None

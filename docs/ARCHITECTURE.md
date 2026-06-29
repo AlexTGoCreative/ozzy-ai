@@ -210,7 +210,7 @@ All constants live in `src/config.py`:
 | `RERANK_TOP_K` | 8 | Max docs after reranking |
 | `RERANK_THRESHOLD` | 0.2 | Min relevance score |
 | `RETRIEVAL_TOP_N` | 50 | Candidates from hybrid search |
-| `RRF_K` | 60 | RRF fusion constant |
+| RRF fusion | Qdrant default | Hybrid dense+sparse results are merged with Qdrant's built-in Reciprocal Rank Fusion (server default rank constant; no client-side override) |
 | `PARENT_CHUNK_SIZE` | 1024 | Parent chunk tokens |
 | `CHILD_CHUNK_SIZE` | 128 | Child chunk tokens |
 | `HISTORY_TOKEN_BUDGET` | 4000 | Chat history token cap |

@@ -172,6 +172,17 @@ def chunk_markdown(doc_text: str, base_metadata: dict) -> tuple[list[dict], list
     parents = []
     children = []
 
+    # Stable, document-unique namespace for parent ids. The metadata's
+    # `content_hash` is NOT populated by the disk loader, so the previous scheme
+    # (`unknown_<n>`) collided across EVERY document: in the indexer's
+    # parent_lookup the last document to define a given `unknown_<n>` key won,
+    # so children were paired with the wrong document's parent_text. We derive
+    # the namespace from the (unique) source identifier plus a short hash of the
+    # document body, guaranteeing per-document uniqueness and stability across
+    # re-ingests.
+    doc_key = base_metadata.get("source_url") or base_metadata.get("content_hash") or ""
+    doc_ns = f"{doc_key}:{hashlib.sha256(doc_text.encode('utf-8')).hexdigest()[:12]}"
+
     # Step 1: Split by headers into structural sections
     sections = _split_by_headers(doc_text)
 
@@ -185,7 +196,7 @@ def chunk_markdown(doc_text: str, base_metadata: dict) -> tuple[list[dict], list
         )
 
         for p_idx, parent_text in enumerate(parent_texts):
-            parent_id = f"{base_metadata.get('content_hash', 'unknown')[:12]}_{len(parents)}"
+            parent_id = f"{doc_ns}#p{len(parents)}"
 
             parent_meta = {
                 **base_metadata,
@@ -194,6 +205,11 @@ def chunk_markdown(doc_text: str, base_metadata: dict) -> tuple[list[dict], list
                 "section_path": " > ".join(section_path) if section_path else "",
                 "chunk_index": len(parents),
                 "token_count": token_len(parent_text),
+                # Per-chunk content hash → stable, unique Qdrant point id
+                # (uuid5) so incremental upserts update the right point.
+                "content_hash": hashlib.sha256(
+                    f"{parent_id}|{parent_text}".encode("utf-8")
+                ).hexdigest(),
             }
             parents.append({"text": parent_text, "metadata": parent_meta})
 
@@ -210,6 +226,9 @@ def chunk_markdown(doc_text: str, base_metadata: dict) -> tuple[list[dict], list
                     "section_path": " > ".join(section_path) if section_path else "",
                     "chunk_index": len(children),
                     "token_count": token_len(child_text),
+                    "content_hash": hashlib.sha256(
+                        f"{parent_id}#c{c_idx}|{child_text}".encode("utf-8")
+                    ).hexdigest(),
                 }
                 children.append({"text": child_text, "metadata": child_meta})
 

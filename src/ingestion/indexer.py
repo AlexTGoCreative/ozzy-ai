@@ -4,6 +4,7 @@ Supports incremental indexing via content-hash deduplication.
 """
 
 import logging
+import uuid
 from typing import Optional
 
 from qdrant_client import QdrantClient, models
@@ -183,8 +184,17 @@ def index_documents(
                 "parent_text": parent_text,
             }
 
+            # Deterministic, collision-free point id derived from the chunk's
+            # content hash. Using a UUID5 (rather than a per-run 0,1,2,…
+            # counter) keeps ids stable across runs so incremental upserts
+            # update the matching point instead of overwriting unrelated ones,
+            # and makes re-ingesting the same chunk idempotent. Falls back to
+            # the chunk text when no content_hash is present.
+            content_hash = chunk["metadata"].get("content_hash") or chunk["text"]
+            point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, content_hash))
+
             point = models.PointStruct(
-                id=total_indexed + j,
+                id=point_id,
                 vector={
                     "dense": dense_vec,
                     "sparse": sparse_vec,

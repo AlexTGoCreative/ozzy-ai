@@ -15,6 +15,7 @@ This article explains how to obtain the possible scan results: How can I run tes
 | 1 | Infected | Metascan engine | One or more threats have been found. |
 | 2 | Suspicious | Metascan engine | Classified as a potential threat without a specific identification. |
 | 3 | Failed | Metascan engine / MetaDefender Core | The scan failed due to the system or application error. |
+| 5 | Unknown | Hash lookup | Unknown signature: the hash was not found in the database. NOTE: code 5 is only used in multiple (bulk) hash lookup responses, not in single file scans or single hash lookups. |
 | 7 | Allowlisted | MetaDefender Core | The scan is skipped for good because one of file characteristics meet certain pre-configured conditions (based on hash / file type / file name etc.). |
 | 8 | Blocklisted | MetaDefender Core | The scan is skipped for bad because one of file characteristics meet certain pre-configured conditions (based on hash / file type / file name etc.). |
 | 9 | Exceeded Archive Depth | Archive Extraction engine | Reached archive handling limit for archive depth level (Max recursion level). |

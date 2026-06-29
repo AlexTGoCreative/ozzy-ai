@@ -3,6 +3,8 @@
 <!-- doc_type: concept -->
 <!-- crawled_at: 2026-06-05T08:53:58.415340 -->
 
+# MetaDefender Core REST API reference
+
 ## Developer Guide
 
 This is the API documentation for *MetaDefender Core Public API*. If you
@@ -63,7 +65,7 @@ Based on the configured retention policy, the files might be available for retri
 
 OPSWAT provides some sample codes on GitHub to make it easier to understand how the MetaDefender REST API works.
 
-## Auth
+## MetaDefender Core authentication & auth APIs
 
 ### Authentication APIs
 
@@ -99,7 +101,7 @@ Unexpected event on server
 
 The APIs for manage users and user directories.
 
-## Analysis
+## MetaDefender Core file analysis APIs
 
 ### File analysis APIs
 

@@ -1,4 +1,4 @@
-# Ozzy Chatbot — RAG Pipeline Modernization Report
+# Athena Chatbot — RAG Pipeline Modernization Report
 
 **Audience:** Senior Software Engineering Team
 **Author:** Architecture Review
@@ -748,7 +748,7 @@ async def build_context(
 ### 7.3 Prompt with prompt-injection mitigation
 
 ```python name=app/prompt.py
-SYSTEM = """You are Ozzy, OPSWAT's cybersecurity assistant.
+SYSTEM = """You are Athena, OPSWAT's cybersecurity assistant.
 
 Rules:
 - Answer ONLY using the CONTEXT below. If the answer is not present, say so.

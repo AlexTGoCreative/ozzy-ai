@@ -1,0 +1,15 @@
+__pycache__
+*.pyc
+*.pyo
+.env
+.env.*
+*.log
+chatbot.log
+.git
+.venv
+venv
+hf_cache
+Dockerfile
+.dockerignore
+data/scraped
+embedding_cache
